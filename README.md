@@ -2,6 +2,8 @@
 
 A high-performance, asynchronous CLI tool designed for network reconnaissance. It enumerates subdomains using Certificate Transparency (CT) logs and performs concurrent port scanning on resolved targets.
 
+Designed as a **proof-of-concept** for handling massive concurrency in Rust using tokio and futures.
+
 ## Features
 
 - **Passive Reconnaissance**: Retrieves subdomains from crt.sh (Certificate Transparency logs) to minimize direct interaction with the target initially.
