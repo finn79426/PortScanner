@@ -1,77 +1,65 @@
-use std::collections::HashSet;
-use serde::Deserialize;
 use anyhow::Result;
 use futures::{StreamExt, stream};
-use hickory_resolver::Resolver;
-use hickory_resolver::config::ResolverConfig;
-use hickory_resolver::name_server::TokioConnectionProvider;
+use hickory_resolver::TokioAsyncResolver;
+use hickory_resolver::config::{ResolverConfig, ResolverOpts};
+use serde::Deserialize;
+use std::collections::HashSet;
 
 use crate::model::Subdomain;
 
 pub async fn enumerate(http_client: &reqwest::Client, domain: &str) -> Result<Vec<Subdomain>> {
-    // Declare needed response fields
+    // Declare needed API response fields
     #[derive(Debug, Deserialize)]
     struct CrtShEntry {
         name_value: String,
     }
 
-    // Get query result
-    let entries = http_client
+    // Get CT log entries
+    let entries: Vec<CrtShEntry> = http_client
         .get(format!("https://crt.sh/?q=%25.{}&output=json", domain))
         .send()
         .await?
-        .json::<Vec<CrtShEntry>>()
+        .json()
         .await?;
 
-    // Clean & Deduplicate query result
-    let mut subdomains = entries
+    // Get subdomains by parsing CT log entries
+    let mut subdomains: HashSet<String> = entries
         .into_iter()
         .flat_map(|entry| {
             entry
                 .name_value
                 .split("\n")
-                .map(|subdomain| subdomain.trim().to_string())
+                .map(|subdomain| subdomain.trim().to_lowercase().to_string())
                 .collect::<Vec<String>>()
         })
-        .filter(|subdomain| subdomain != domain)
-        .filter(|subdomain| !subdomain.contains("*"))
-        .collect::<HashSet<String>>();
+        .filter(|subdomain| !subdomain.contains("*")) // Remove wildcard subdomains
+        .collect();
 
-    // Insert target subdomain into HashSet
+    // Insert root `domain` into `subdomains` set
     subdomains.insert(domain.to_string());
 
-    debug_assert!(!subdomains.is_empty());
-    debug_assert!(subdomains.contains(domain));
-
-    // Declare DNS resolver
-    let resolver = Resolver::builder_with_config(
-        ResolverConfig::default(),
-        TokioConnectionProvider::default(),
-    )
-    .build();
+    // Build DNS resolver
+    let resolver = TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default());
 
     // Enumerate subdomains
-    let subdomains = stream::iter(subdomains.into_iter())
+    let subdomains: Vec<Subdomain> = stream::iter(subdomains.into_iter())
         .map(|domain| Subdomain {
             domain,
             open_ports: Vec::new(),
         })
-        .filter_map(|subdomain| {
-            let _resolver = resolver.clone();
-            async move {
-                if is_resolvable(&_resolver, &subdomain.domain).await {
-                    Some(subdomain)
-                } else {
-                    None
-                }
+        .filter_map(|subdomain| async {
+            if is_resolvable(&resolver, &subdomain.domain).await {
+                Some(subdomain)
+            } else {
+                None
             }
         })
-        .collect::<Vec<Subdomain>>()
+        .collect()
         .await;
 
     Ok(subdomains)
 }
 
-async fn is_resolvable(resolver: &Resolver<TokioConnectionProvider>, domain: &str) -> bool {
+async fn is_resolvable(resolver: &TokioAsyncResolver, domain: &str) -> bool {
     resolver.lookup_ip(domain).await.is_ok()
 }

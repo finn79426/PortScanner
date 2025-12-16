@@ -6,7 +6,9 @@ mod subdomain;
 use anyhow::{Result, bail};
 use futures::{StreamExt, stream};
 use reqwest::Client;
+use std::env;
 use std::time::Duration;
+use std::time::Instant;
 
 use crate::errors::Error;
 use crate::model::Subdomain;
@@ -16,30 +18,33 @@ const PORTS_CONCURRENCY: usize = 256;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    let args: Vec<String> = std::env::args().collect();
+    // Parse arguments & Input validation
+    let args: Vec<String> = env::args().collect();
 
     if args.len() != 2 {
         bail!(Error::CliUsage);
     }
 
-    let target = args[1].as_str();
-    let http_client = Client::builder().timeout(Duration::from_secs(30)).build()?;
+    let target = args[1].as_str().to_lowercase();
 
-    // Declare a timer
-    let scan_started = std::time::Instant::now();
+    // Declare HTTP client and start scan timer
+    let http_client = Client::builder().timeout(Duration::from_secs(30)).build()?;
+    let scan_started = Instant::now();
 
     // Enumerate subdomains
-    let subdomains = subdomain::enumerate(&http_client, target).await?;
+    let subdomains = subdomain::enumerate(&http_client, &target).await?;
 
     // Scan top 100 ports for each subdomain (concurrently)
     // - SUBDOMAIN_CONCURRENCY: Ｔhe number of subdomains to scan concurrently
     // - PORTS_CONCURRENCY: The number of ports to scan concurrently per subdomain
+    // e.g. Maximum number of concurrent scans is `SUBDOMAIN_CONCURRENCY * PORTS_CONCURRENCY`
     let subdomains = stream::iter(subdomains.into_iter())
         .map(|subdomain| ports::scan_top_100_ports(PORTS_CONCURRENCY, subdomain))
         .buffer_unordered(SUBDOMAIN_CONCURRENCY)
         .collect::<Vec<Subdomain>>()
         .await;
 
+    // Stop scan timer
     let scan_duration = scan_started.elapsed();
 
     println!(
@@ -49,10 +54,11 @@ async fn main() -> Result<(), anyhow::Error> {
 
     println!("{}", "-".repeat(50));
 
+    // Print scan results
     for subdomain in subdomains {
-        println!("{}", &subdomain.domain);
+        println!("{}", subdomain.domain);
         for port in subdomain.open_ports {
-            println!("\t{}: opened", port.port);
+            println!("\t{}: opened", port);
         }
         println!();
     }
