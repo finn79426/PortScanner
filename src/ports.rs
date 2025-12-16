@@ -1,4 +1,4 @@
-use futures::{StreamExt, stream, future};
+use futures::{StreamExt, future, stream};
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::TcpStream;
