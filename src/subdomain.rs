@@ -29,16 +29,16 @@ pub async fn enumerate(http_client: &reqwest::Client, domain: &str) -> Result<Ve
             entry
                 .name_value
                 .split("\n")
-                .map(|subdomain| subdomain.trim().to_lowercase().to_string())
+                .map(|subdomain| subdomain.trim().to_lowercase())
                 .collect::<Vec<String>>()
         })
         .filter(|subdomain| !subdomain.contains("*")) // Remove wildcard subdomains
         .collect();
 
-    // Insert root `domain` into `subdomains` set
+    // Insert root domain `domain` into `subdomains` set
     subdomains.insert(domain.to_string());
 
-    // Build DNS resolver
+    // Declare a DNS resolver for dependency injection
     let resolver = TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default());
 
     // Enumerate subdomains
