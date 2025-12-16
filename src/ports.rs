@@ -18,12 +18,15 @@ pub async fn scan_top_100_ports(concurrency: usize, mut subdomain: Subdomain) ->
         9100, 119, 37,
     ];
 
+    // Resolve domain to socket address
+    // - Port 1337 is a dummy port in order to satisfy the `SocketAddr` type
     let socket_addr = lookup_host(format!("{}:1337", subdomain.domain))
         .await
         .expect("DNS lookup failed")
         .next()
         .expect("No IP address resolved");
 
+    // Probe top 100 ports
     let mut open_ports: Vec<Port> = stream::iter(TOP_100_PORTS.iter().copied())
         .map(|port| {
             let socket_addr = SocketAddr::new(socket_addr.ip(), port);
@@ -37,6 +40,7 @@ pub async fn scan_top_100_ports(concurrency: usize, mut subdomain: Subdomain) ->
         .collect()
         .await;
 
+    // Sort open ports in ascending order
     open_ports.sort_unstable();
 
     subdomain.open_ports = open_ports;
