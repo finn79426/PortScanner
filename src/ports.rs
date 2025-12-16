@@ -1,4 +1,4 @@
-use futures::{StreamExt, stream};
+use futures::{StreamExt, stream, future};
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::TcpStream;
@@ -36,7 +36,7 @@ pub async fn scan_top_100_ports(concurrency: usize, mut subdomain: Subdomain) ->
             }
         })
         .buffer_unordered(concurrency)
-        .filter_map(|res| async move { res }) // drop None values
+        .filter_map(future::ready) // drop None values
         .collect()
         .await;
 
